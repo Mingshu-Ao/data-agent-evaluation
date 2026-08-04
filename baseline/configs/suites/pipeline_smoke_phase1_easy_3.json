@@ -1,0 +1,48 @@
+{
+  "suite_name": "pipeline_smoke_phase1_easy_3",
+  "description": "Three easy Phase 1 tasks for the first Baseline-Pipeline integration test, covering JSON joins, CSV-JSON counting, and filtered aggregation.",
+  "selection_policy": "Fixed smoke-test tasks selected for simple outputs and complementary data operations.",
+  "suite_summary": {
+    "task_count": 3,
+    "difficulty_counts": {
+      "easy": 3
+    },
+    "file_type_set_counts": {
+      "json+md": 1,
+      "csv+json+md": 2
+    },
+    "question_type_counts": {
+      "lookup_or_list": 1,
+      "count": 1,
+      "average": 1
+    }
+  },
+  "task_ids": [
+    "task_11",
+    "task_24",
+    "task_67"
+  ],
+  "tasks": [
+    {
+      "task_id": "task_11",
+      "difficulty": "easy",
+      "file_types": ["json", "md"],
+      "question_type": "lookup_or_list",
+      "integration_purpose": "Validate JSON loading, cross-file joins, and multi-column output."
+    },
+    {
+      "task_id": "task_24",
+      "difficulty": "easy",
+      "file_types": ["csv", "json", "md"],
+      "question_type": "count",
+      "integration_purpose": "Validate CSV-JSON association and scalar count output."
+    },
+    {
+      "task_id": "task_67",
+      "difficulty": "easy",
+      "file_types": ["csv", "json", "md"],
+      "question_type": "average",
+      "integration_purpose": "Validate filtering, numeric aggregation, and numeric normalization."
+    }
+  ]
+}

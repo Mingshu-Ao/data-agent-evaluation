@@ -1,0 +1,15 @@
+dataset:
+  root_path: D:/path/to/pipeline_runs/example/dataset/input
+
+agent:
+  model: YOUR_MODEL_NAME
+  api_base: YOUR_OPENAI_COMPATIBLE_API_BASE
+  api_key: YOUR_LOCAL_API_KEY
+  max_steps: 16
+  temperature: 0.0
+
+run:
+  output_dir: D:/path/to/pipeline_runs/example/baseline_output/react
+  run_id:
+  max_workers: 1
+  task_timeout_seconds: 600
