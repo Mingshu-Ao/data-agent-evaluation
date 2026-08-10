@@ -3,7 +3,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
+from pathlib import Path
 
+from data_agent_baseline.agents.ace_playbook import ACEPlaybook
 from data_agent_baseline.agents.model import ModelAdapter, ModelMessage, ModelStep
 from data_agent_baseline.agents.multimodal import build_user_content_with_video
 from data_agent_baseline.agents.prompt import (
@@ -15,6 +17,7 @@ from data_agent_baseline.agents.prompt import (
 )
 from data_agent_baseline.agents.runtime import AgentRunResult, AgentRuntimeState, StepRecord
 from data_agent_baseline.benchmark.schema import PublicTask
+from data_agent_baseline.tools.context_profile import build_lightweight_schema_index
 from data_agent_baseline.tools.registry import ToolRegistry
 
 
@@ -22,6 +25,49 @@ from data_agent_baseline.tools.registry import ToolRegistry
 class ReActAgentConfig:
     max_steps: int = 16
     answer_reserve_steps: int = 4
+    schema_index_enabled: bool = False
+    convergence_enabled: bool = True
+    ace_enabled: bool = False
+    ace_playbook_path: Path | None = None
+
+
+def _render_schema_index(profile: dict[str, object]) -> str:
+    lines = [
+        "Automatically generated schema index:",
+        "Use this only for source discovery; inspect or query the files before answering.",
+    ]
+    raw_files = profile.get("files", [])
+    if not isinstance(raw_files, list):
+        return "\n".join(lines)
+    for item in raw_files:
+        if not isinstance(item, dict):
+            continue
+        path = str(item.get("path", "unknown"))
+        kind = str(item.get("kind", "file"))
+        if kind == "sqlite":
+            tables = item.get("tables", [])
+            table_parts = []
+            if isinstance(tables, list):
+                for table in tables:
+                    if isinstance(table, dict):
+                        table_parts.append(
+                            f"{table.get('name')}({', '.join(str(value) for value in table.get('columns', []))})"
+                        )
+            lines.append(f"- {path} [sqlite]: {'; '.join(table_parts) or 'schema unavailable'}")
+        elif kind == "csv":
+            columns = ", ".join(str(value) for value in item.get("columns", []))
+            lines.append(f"- {path} [csv]: columns={columns}; rows={item.get('row_count')}")
+        elif kind == "json":
+            keys = item.get("keys", [])
+            lines.append(f"- {path} [json]: top-level keys={', '.join(str(value) for value in keys)}")
+        elif kind == "document":
+            lines.append(f"- {path} [document]: bytes={item.get('size')}")
+        else:
+            lines.append(f"- {path} [{kind}]")
+    raw_errors = profile.get("errors", [])
+    if isinstance(raw_errors, list) and raw_errors:
+        lines.append(f"- Indexing warnings: {len(raw_errors)} file(s) could not be profiled.")
+    return "\n".join(lines)
 
 
 def _strip_json_fence(raw_response: str) -> str:
@@ -35,6 +81,15 @@ def _strip_json_fence(raw_response: str) -> str:
     unclosed_fence_match = re.search(r"```(?:json)?\s*", text, flags=re.IGNORECASE)
     if unclosed_fence_match is not None:
         return text[unclosed_fence_match.end() :].strip()
+    decoder = json.JSONDecoder()
+    for match in re.finditer(r"\{", text):
+        candidate = text[match.start() :]
+        try:
+            payload, end = decoder.raw_decode(candidate)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(payload, dict):
+            return candidate[:end].strip()
     return text
 
 
@@ -85,6 +140,30 @@ class ReActAgent:
         self.tools = tools
         self.config = config or ReActAgentConfig()
         self.system_prompt = system_prompt or REACT_SYSTEM_PROMPT
+        self.ace_playbook = ACEPlaybook(self.config.ace_playbook_path)
+        self._initial_context_cache: dict[str, str] = {}
+
+    def _initial_context(self, task: PublicTask) -> str:
+        cached = self._initial_context_cache.get(task.task_id)
+        if cached is not None:
+            return cached
+        sections: list[str] = []
+        schema_index = ""
+        if self.config.schema_index_enabled:
+            try:
+                schema_index = _render_schema_index(build_lightweight_schema_index(task))
+                sections.append(schema_index)
+            except Exception as exc:  # noqa: BLE001
+                sections.append(f"Schema index unavailable: {exc}")
+        if self.config.ace_enabled:
+            playbook = self.ace_playbook.render_for_prompt(
+                f"{task.question}\n{schema_index}",
+            )
+            if playbook:
+                sections.append(playbook)
+        rendered = "\n\n".join(sections)
+        self._initial_context_cache[task.task_id] = rendered
+        return rendered
 
     def _build_messages(
         self,
@@ -98,10 +177,14 @@ class ReActAgent:
             system_prompt=self.system_prompt,
         )
         messages = [ModelMessage(role="system", content=system_content)]
+        task_prompt = build_task_prompt(task)
+        initial_context = self._initial_context(task)
+        if initial_context:
+            task_prompt = f"{task_prompt}\n\n{initial_context}"
         messages.append(
             ModelMessage(
                 role="user",
-                content=build_user_content_with_video(task, build_task_prompt(task)),
+                content=build_user_content_with_video(task, task_prompt),
             )
         )
         for step in state.steps:
@@ -109,7 +192,7 @@ class ReActAgent:
             messages.append(
                 ModelMessage(role="user", content=build_observation_prompt(step.observation))
             )
-        if remaining_steps <= self.config.answer_reserve_steps:
+        if self.config.convergence_enabled and remaining_steps <= self.config.answer_reserve_steps:
             messages.append(
                 ModelMessage(
                     role="user",
@@ -197,6 +280,8 @@ class ReActAgent:
             try:
                 model_step = parse_model_step(raw_response)
                 if (
+                    self.config.convergence_enabled
+                    and
                     remaining_steps <= self.config.answer_reserve_steps
                     and model_step.action != "answer"
                 ):
@@ -257,7 +342,7 @@ class ReActAgent:
                     )
                 )
 
-        if state.answer is None:
+        if state.answer is None and self.config.convergence_enabled:
             try:
                 self._attempt_forced_answer(task, state)
             except Exception as exc:  # noqa: BLE001

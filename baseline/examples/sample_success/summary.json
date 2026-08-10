@@ -1,0 +1,18 @@
+{
+  "run_id": "example_success",
+  "task_count": 1,
+  "succeeded_task_count": 1,
+  "max_workers": 1,
+  "tasks": [
+    {
+      "task_id": "task_example",
+      "task_output_dir": "examples/sample_success/task_example",
+      "prediction_csv_path": "examples/sample_success/task_example/prediction.csv",
+      "analysis_report_path": null,
+      "trace_path": "examples/sample_success/task_example/trace.json",
+      "succeeded": true,
+      "failure_reason": null
+    }
+  ]
+}
+

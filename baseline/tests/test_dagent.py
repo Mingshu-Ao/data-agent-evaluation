@@ -99,6 +99,17 @@ def test_model_step_parser_accepts_unclosed_json_fence() -> None:
     assert step.action_input == {"max_depth": 2}
 
 
+def test_model_step_parser_accepts_prose_before_json_object() -> None:
+    step = parse_model_step(
+        "I'll inspect the workspace first.\n\n"
+        '{"thought":"Inspect context.","action":"list_context",'
+        '"action_input":{"max_depth":4}}'
+    )
+
+    assert step.action == "list_context"
+    assert step.action_input == {"max_depth": 4}
+
+
 def test_dagent_plans_uses_tool_answers_and_generates_report(tmp_path: Path) -> None:
     task = _make_task(tmp_path)
     (task.context_dir / "patients.csv").write_text(

@@ -45,7 +45,7 @@ def list_context_tree(task: PublicTask, *, max_depth: int = 4) -> dict[str, obje
 
 def read_csv_preview(task: PublicTask, relative_path: str, *, max_rows: int = 20) -> dict[str, object]:
     path = resolve_context_path(task, relative_path)
-    with path.open(newline="") as handle:
+    with path.open(newline="", encoding="utf-8-sig", errors="replace") as handle:
         reader = csv.reader(handle)
         rows = list(reader)
 

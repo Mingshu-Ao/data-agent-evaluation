@@ -33,11 +33,13 @@ class OpenAIModelAdapter:
         api_base: str,
         api_key: str,
         temperature: float,
+        json_mode: bool = False,
     ) -> None:
         self.model = model
         self.api_base = api_base.rstrip("/")
         self.api_key = api_key
         self.temperature = temperature
+        self.json_mode = json_mode
 
     def complete(self, messages: list[ModelMessage]) -> str:
         if not self.api_key:
@@ -51,12 +53,16 @@ class OpenAIModelAdapter:
         )
 
         try:
+            request_options: dict[str, Any] = {}
+            if self.json_mode:
+                request_options["response_format"] = {"type": "json_object"}
             response = client.chat.completions.create(
                 model=self.model,
                 messages=[{"role": message.role, "content": message.content} for message in messages],
                 temperature=self.temperature,
                 max_tokens=2048,
                 extra_body={"thinking": {"type": "disabled"}},
+                **request_options,
             )
         except APIError as exc:
             raise RuntimeError(f"Model request failed: {exc}") from exc

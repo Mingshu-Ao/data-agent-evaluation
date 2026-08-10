@@ -107,6 +107,87 @@ def _profile_doc(path: Path, relative_path: str, *, max_chars: int) -> dict[str,
     }
 
 
+def build_lightweight_schema_index(task: PublicTask) -> dict[str, Any]:
+    """Inspect schemas and file metadata without scanning document contents or table rows."""
+    files: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for path in sorted(task.context_dir.rglob("*")):
+        if not path.is_file() or path.name.startswith("."):
+            continue
+        relative_path = path.relative_to(task.context_dir).as_posix()
+        suffix = path.suffix.lower()
+        try:
+            if suffix == ".csv":
+                with path.open(newline="", encoding="utf-8-sig") as handle:
+                    header = next(csv.reader(handle), [])
+                files.append(
+                    {
+                        "path": relative_path,
+                        "kind": "csv",
+                        "columns": header,
+                    }
+                )
+            elif suffix in {".sqlite", ".sqlite3", ".db"}:
+                tables: list[dict[str, Any]] = []
+                uri = f"file:{path.resolve().as_posix()}?mode=ro"
+                with sqlite3.connect(uri, uri=True) as connection:
+                    table_rows = connection.execute(
+                        "SELECT name FROM sqlite_master "
+                        "WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
+                    ).fetchall()
+                    for (table_name,) in table_rows:
+                        quoted_name = str(table_name).replace('"', '""')
+                        columns = [
+                            row[1]
+                            for row in connection.execute(
+                                f'PRAGMA table_info("{quoted_name}")'
+                            ).fetchall()
+                        ]
+                        tables.append({"name": table_name, "columns": columns})
+                files.append(
+                    {
+                        "path": relative_path,
+                        "kind": "sqlite",
+                        "tables": tables,
+                    }
+                )
+            elif suffix == ".json":
+                keys: list[str] = []
+                if path.stat().st_size <= 2 * 1024 * 1024:
+                    payload = json.loads(path.read_text(encoding="utf-8"))
+                    if isinstance(payload, dict):
+                        keys = [str(value) for value in list(payload)[:50]]
+                    elif isinstance(payload, list) and payload and isinstance(payload[0], dict):
+                        keys = [str(value) for value in list(payload[0])[:50]]
+                files.append(
+                    {
+                        "path": relative_path,
+                        "kind": "json",
+                        "keys": keys,
+                        "size": path.stat().st_size,
+                    }
+                )
+            elif suffix in {".md", ".pdf", ".txt"}:
+                files.append(
+                    {
+                        "path": relative_path,
+                        "kind": "document",
+                        "size": path.stat().st_size,
+                    }
+                )
+            else:
+                files.append(
+                    {
+                        "path": relative_path,
+                        "kind": "file",
+                        "size": path.stat().st_size,
+                    }
+                )
+        except Exception as exc:  # noqa: BLE001
+            errors.append({"path": relative_path, "error": str(exc)})
+    return {"root": str(task.context_dir), "files": files, "errors": errors}
+
+
 def profile_context(task: PublicTask, *, sample_rows: int = 3, max_doc_chars: int = 1200) -> dict[str, Any]:
     files: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []

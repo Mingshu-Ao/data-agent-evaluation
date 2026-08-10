@@ -1,5 +1,6 @@
 import json
-from datetime import datetime
+from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from time import perf_counter
 
@@ -16,11 +17,23 @@ from rich.progress import (
 )
 from rich.table import Table
 
+from data_agent_baseline.agents.ace_playbook import curate_ace_playbook_from_run
 from data_agent_baseline.benchmark.agentic_data_report import (
     write_agentic_data_report,
 )
 from data_agent_baseline.benchmark.aop_report import write_mini_aop_report
 from data_agent_baseline.benchmark.dataset import DABenchPublicDataset
+from data_agent_baseline.benchmark.dataspace import (
+    evaluate_dataspace_run,
+    profile_dataspace,
+    write_dataspace_matrix_comparison,
+    write_dataspace_report_and_suites,
+)
+from data_agent_baseline.benchmark.dataspace_download import (
+    DATASPACE_ARCHIVE_URL,
+    DEFAULT_LOCAL_SMOKE_TASK_IDS,
+    download_dataspace_subset,
+)
 from data_agent_baseline.benchmark.evaluation import compare_runs, write_evaluation_outputs
 from data_agent_baseline.benchmark.fdabench import (
     materialize_fdabench_multiple_replay,
@@ -58,6 +71,9 @@ CONFIGS_DIR = PROJECT_ROOT / "configs"
 DATA_DIR = PROJECT_ROOT / "data"
 ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
 ARTIFACT_RUNS_DIR = ARTIFACTS_DIR / "runs"
+DATASPACE_EVALUATOR = (
+    PROJECT_ROOT.parents[2] / "dataspace-official" / "evaluation" / "evaluate.py"
+)
 
 app = typer.Typer(add_completion=False, no_args_is_help=False)
 console = Console()
@@ -563,6 +579,336 @@ def diagnose_step_limit_command(
     json_path, markdown_path = write_step_limit_report(effective_run_dir)
     console.print(f"Step-limit JSON: {json_path}")
     console.print(f"Step-limit Markdown: {markdown_path}")
+
+
+@app.command("download-dataspace-subset")
+def download_dataspace_subset_command(
+    output_root: Path = typer.Option(
+        Path("data/dataspace_local_subset"),
+        help="Local directory for the partial DataSpace extraction.",
+    ),
+    task_ids: str = typer.Option(
+        ",".join(DEFAULT_LOCAL_SMOKE_TASK_IDS),
+        help="Comma-separated public-reference task ids.",
+    ),
+    archive_url: str = typer.Option(
+        DATASPACE_ARCHIVE_URL,
+        help="Official DataSpace ZIP URL.",
+    ),
+) -> None:
+    """Download selected DataSpace tasks with HTTP Range requests."""
+    selected_ids = [value.strip() for value in task_ids.split(",") if value.strip()]
+
+    def on_file(index: int, total: int, member_name: str, reused: bool) -> None:
+        state = "reused" if reused else "downloaded"
+        console.print(f"[{index}/{total}] {state}: {member_name}")
+
+    try:
+        manifest = download_dataspace_subset(
+            output_root=_resolve_project_path(output_root),
+            task_ids=selected_ids,
+            archive_url=archive_url,
+            progress_callback=on_file,
+        )
+    except (OSError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    console.print(f"Benchmark root: {manifest['benchmark_root']}")
+    console.print(f"Tasks downloaded: {manifest['task_count']}")
+    console.print(
+        "Uncompressed bytes downloaded this run: "
+        f"{manifest['downloaded_uncompressed_bytes']}"
+    )
+    console.print(f"Manifest: {manifest['manifest_path']}")
+
+
+@app.command("prepare-dataspace")
+def prepare_dataspace_command(
+    benchmark_root: Path = typer.Option(
+        ...,
+        exists=True,
+        file_okay=False,
+        help="Extracted DataSpace-Benchmark directory or its parent.",
+    ),
+    report_dir: Path = typer.Option(
+        Path("artifacts/dataspace"),
+        help="Directory for DataSpace inventory reports.",
+    ),
+    suites_dir: Path = typer.Option(
+        Path("configs/suites"),
+        help="Directory for generated public-reference suites.",
+    ),
+    smoke_size: int = typer.Option(5, min=1, help="Smoke suite size."),
+    coverage_size: int = typer.Option(20, min=1, help="Coverage suite size."),
+) -> None:
+    """Scan DataSpace and generate deterministic public-reference suites."""
+    try:
+        paths = write_dataspace_report_and_suites(
+            benchmark_root=benchmark_root,
+            report_dir=_resolve_project_path(report_dir),
+            suites_dir=_resolve_project_path(suites_dir),
+            smoke_size=smoke_size,
+            coverage_size=coverage_size,
+        )
+    except (FileNotFoundError, ValueError) as exc:
+        raise typer.BadParameter(str(exc), param_hint="--benchmark-root") from exc
+    for label, path in paths.items():
+        console.print(f"{label}: {path}")
+
+
+@app.command("evaluate-dataspace")
+def evaluate_dataspace_command(
+    run_dir: Path = typer.Argument(..., exists=True, file_okay=False),
+    benchmark_root: Path = typer.Option(
+        ...,
+        exists=True,
+        file_okay=False,
+        help="Extracted DataSpace-Benchmark directory or its parent.",
+    ),
+    evaluator_script: Path = typer.Option(
+        DATASPACE_EVALUATOR,
+        exists=True,
+        dir_okay=False,
+        help="Official DataSpace evaluation/evaluate.py path.",
+    ),
+    suite: Path | None = typer.Option(
+        None,
+        exists=True,
+        dir_okay=False,
+        help="Optional suite JSON; omitted means all 60 public references.",
+    ),
+) -> None:
+    """Run the official evaluator and add non-exclusive modality slices."""
+    task_ids = _load_suite_task_ids_option(suite)
+    try:
+        paths = evaluate_dataspace_run(
+            run_dir=run_dir.resolve(),
+            benchmark_root=benchmark_root,
+            evaluator_script=evaluator_script,
+            task_ids=task_ids,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    for label, path in paths.items():
+        console.print(f"{label}: {path}")
+
+
+@app.command("run-dataspace-matrix")
+def run_dataspace_matrix_command(
+    config: Path = typer.Option(..., exists=True, dir_okay=False, help="YAML config path."),
+    benchmark_root: Path = typer.Option(
+        ...,
+        exists=True,
+        file_okay=False,
+        help="Extracted DataSpace-Benchmark directory or its parent.",
+    ),
+    evaluator_script: Path = typer.Option(
+        DATASPACE_EVALUATOR,
+        exists=True,
+        dir_okay=False,
+        help="Official DataSpace evaluation/evaluate.py path.",
+    ),
+    suite: Path | None = typer.Option(
+        None,
+        exists=True,
+        dir_okay=False,
+        help="Suite JSON; omitted means all public-reference tasks.",
+    ),
+    limit: int | None = typer.Option(None, min=1, help="Maximum tasks per agent."),
+    agents: str = typer.Option(
+        "react,dagent-lite,agenticdata-lite,mini-aop",
+        help="Comma-separated agents to run.",
+    ),
+) -> None:
+    """Run and officially score a same-model DataSpace baseline matrix."""
+    aliases = {
+        "react": ("react", "react"),
+        "react-enhanced": ("react-enhanced", "react_enhanced"),
+        "react-enhanced-no-schema": (
+            "react-enhanced-no-schema",
+            "react_enhanced_no_schema",
+        ),
+        "react-enhanced-no-convergence": (
+            "react-enhanced-no-convergence",
+            "react_enhanced_no_convergence",
+        ),
+        "react-enhanced-no-ace": (
+            "react-enhanced-no-ace",
+            "react_enhanced_no_ace",
+        ),
+        "dagent": ("dagent-lite", "dagent"),
+        "dagent-lite": ("dagent-lite", "dagent"),
+        "agenticdata": ("agenticdata-lite", "agentic_data"),
+        "agenticdata-lite": ("agenticdata-lite", "agentic_data"),
+        "mini-aop": ("mini-aop", "mini_aop"),
+        "mini_aop": ("mini-aop", "mini_aop"),
+    }
+    requested = [value.strip().lower() for value in agents.split(",") if value.strip()]
+    unknown = [value for value in requested if value not in aliases]
+    if not requested or unknown:
+        allowed = (
+            "react, dagent-lite, agenticdata-lite, mini-aop, react-enhanced, "
+            "react-enhanced-no-schema, react-enhanced-no-convergence, "
+            "react-enhanced-no-ace"
+        )
+        detail = f" Unknown: {', '.join(unknown)}." if unknown else ""
+        raise typer.BadParameter(f"Choose one or more of: {allowed}.{detail}", param_hint="--agents")
+
+    selected_agents: list[tuple[str, str]] = []
+    seen_labels: set[str] = set()
+    for value in requested:
+        label, kind = aliases[value]
+        if label not in seen_labels:
+            selected_agents.append((label, kind))
+            seen_labels.add(label)
+
+    app_config = load_app_config(config)
+    suite_task_ids = _load_suite_task_ids_option(suite)
+    if suite_task_ids is None:
+        _, profiles = profile_dataspace(benchmark_root)
+        suite_task_ids = [profile.task_id for profile in profiles if profile.public_reference]
+    suite_task_ids = sorted(
+        suite_task_ids,
+        key=lambda task_id: int(task_id.removeprefix("task_")),
+    )
+    if limit is not None:
+        suite_task_ids = suite_task_ids[:limit]
+    if not suite_task_ids:
+        raise typer.BadParameter("No tasks selected for the matrix.", param_hint="--suite")
+
+    available_task_ids = set(DABenchPublicDataset(app_config.dataset.root_path).list_task_ids())
+    missing = [task_id for task_id in suite_task_ids if task_id not in available_task_ids]
+    if missing:
+        raise typer.BadParameter(
+            "The configured dataset.root_path is missing selected tasks: "
+            f"{', '.join(missing[:10])}",
+            param_hint="--config",
+        )
+
+    matrix_id = datetime.now(timezone.utc).strftime("dataspace_matrix_%Y%m%dT%H%M%S%fZ")
+    matrix_dir = app_config.run.output_dir / matrix_id
+    matrix_dir.mkdir(parents=True, exist_ok=False)
+    agent_runs: dict[str, Path] = {}
+    manifest_agents: list[dict[str, object]] = []
+
+    console.print(
+        f"DataSpace matrix: {len(suite_task_ids)} tasks x {len(selected_agents)} agents"
+    )
+    for label, agent_kind in selected_agents:
+        console.print(f"Starting {label}...")
+        completed_count = 0
+
+        def on_task_complete(artifact: TaskRunArtifacts) -> None:
+            nonlocal completed_count
+            completed_count += 1
+            console.print(
+                f"  [{completed_count}/{len(suite_task_ids)}] {artifact.task_id}: "
+                f"{'ok' if artifact.succeeded else 'fail'}"
+            )
+
+        fair_run_config = replace(
+            app_config,
+            run=replace(
+                app_config.run,
+                output_dir=matrix_dir,
+                run_id=label,
+                max_workers=1,
+            ),
+        )
+        try:
+            run_dir, artifacts = run_benchmark(
+                config=fair_run_config,
+                task_ids=suite_task_ids,
+                agent_kind=agent_kind,
+                progress_callback=on_task_complete,
+            )
+            evaluation_paths = evaluate_dataspace_run(
+                run_dir=run_dir,
+                benchmark_root=benchmark_root,
+                evaluator_script=evaluator_script,
+                task_ids=suite_task_ids,
+            )
+        except (FileNotFoundError, RuntimeError, ValueError, FileExistsError) as exc:
+            raise typer.BadParameter(f"{label} failed: {exc}") from exc
+        agent_runs[label] = run_dir
+        manifest_agents.append(
+            {
+                "agent": label,
+                "agent_kind": agent_kind,
+                "run_dir": str(run_dir),
+                "attempted": len(artifacts),
+                "submitted": sum(artifact.succeeded for artifact in artifacts),
+                "evaluation": str(evaluation_paths["evaluation"]),
+            }
+        )
+
+    manifest_path = matrix_dir / "matrix_manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "matrix_id": matrix_id,
+                "model": app_config.agent.model,
+                "api_base": app_config.agent.api_base,
+                "temperature": app_config.agent.temperature,
+                "max_steps": app_config.agent.max_steps,
+                "task_timeout_seconds": app_config.run.task_timeout_seconds,
+                "max_workers": 1,
+                "task_ids": suite_task_ids,
+                "agents": manifest_agents,
+            },
+            ensure_ascii=False,
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    comparison_paths = write_dataspace_matrix_comparison(
+        matrix_dir=matrix_dir,
+        agent_runs=agent_runs,
+    )
+    console.print(f"Matrix output: {matrix_dir}")
+    console.print(f"Manifest: {manifest_path}")
+    for label, path in comparison_paths.items():
+        console.print(f"{label}: {path}")
+
+
+@app.command("curate-ace-playbook")
+def curate_ace_playbook_command(
+    run_dir: Path = typer.Argument(..., exists=True, file_okay=False),
+    config: Path = typer.Option(..., exists=True, dir_okay=False, help="YAML config path."),
+    evaluation: Path | None = typer.Option(
+        None,
+        exists=True,
+        dir_okay=False,
+        help="Official evaluation JSON; defaults to RUN_DIR/dataspace_evaluation.json.",
+    ),
+    playbook: Path | None = typer.Option(
+        None,
+        dir_okay=False,
+        help="ACE-lite playbook path; defaults beside the configured run output directory.",
+    ),
+) -> None:
+    """Reflect an adaptation run into a persistent, answer-free ACE-lite playbook."""
+    app_config = load_app_config(config)
+    evaluation_path = evaluation or run_dir / "dataspace_evaluation.json"
+    playbook_path = (
+        playbook
+        or app_config.agent.ace_playbook_path
+        or app_config.run.output_dir.parent / "ace_playbook.json"
+    )
+    if not evaluation_path.is_file():
+        raise typer.BadParameter(
+            f"Official evaluation JSON does not exist: {evaluation_path}",
+            param_hint="--evaluation",
+        )
+    report = curate_ace_playbook_from_run(
+        run_dir=run_dir.resolve(),
+        dataset_root=app_config.dataset.root_path,
+        evaluation_path=evaluation_path.resolve(),
+        playbook_path=_resolve_project_path(playbook_path),
+    )
+    console.print(f"Playbook: {report['playbook_path']}")
+    console.print(f"Deltas curated: {report['delta_count']}")
+    console.print(f"Playbook entries: {report['entry_count']}")
 
 
 @app.command("prepare-fdabench")

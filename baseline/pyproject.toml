@@ -41,6 +41,9 @@ video-asr = [
     "Pillow>=11.0.0",
     "rapidocr-onnxruntime>=1.4.4",
 ]
+dataspace = [
+    "remotezip>=0.12.3",
+]
 
 [project.scripts]
 dabench = "data_agent_baseline.cli:main"

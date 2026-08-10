@@ -1,0 +1,18 @@
+{
+  "run_id": "example_failure",
+  "task_count": 1,
+  "succeeded_task_count": 0,
+  "max_workers": 1,
+  "tasks": [
+    {
+      "task_id": "task_example",
+      "task_output_dir": "examples/sample_failure/task_example",
+      "prediction_csv_path": null,
+      "analysis_report_path": null,
+      "trace_path": "examples/sample_failure/task_example/trace.json",
+      "succeeded": false,
+      "failure_reason": "Agent did not submit an answer within max_steps."
+    }
+  ]
+}
+

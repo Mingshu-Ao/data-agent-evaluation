@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -9,6 +11,7 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only in minimal loca
     yaml = None
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+ENV_REFERENCE_PATTERN = re.compile(r"^\$\{([A-Za-z_][A-Za-z0-9_]*)\}$")
 
 
 def _default_dataset_root() -> Path:
@@ -31,6 +34,8 @@ class AgentConfig:
     api_key: str = ""
     max_steps: int = 16
     temperature: float = 0.0
+    json_mode: bool = False
+    ace_playbook_path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,10 +47,18 @@ class RunConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class AnswerContractConfig:
+    enabled: bool = False
+    model_review_enabled: bool = True
+    evidence_max_chars: int = 24000
+
+
+@dataclass(frozen=True, slots=True)
 class AppConfig:
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     agent: AgentConfig = field(default_factory=AgentConfig)
     run: RunConfig = field(default_factory=RunConfig)
+    answer_contract: AnswerContractConfig = field(default_factory=AnswerContractConfig)
 
 
 def _path_value(raw_value: str | None, default_value: Path) -> Path:
@@ -55,6 +68,14 @@ def _path_value(raw_value: str | None, default_value: Path) -> Path:
     if candidate.is_absolute():
         return candidate
     return (PROJECT_ROOT / candidate).resolve()
+
+
+def _secret_value(raw_value: object) -> str:
+    value = str(raw_value or "").strip()
+    match = ENV_REFERENCE_PATTERN.fullmatch(value)
+    if match is None:
+        return value
+    return os.environ.get(match.group(1), "")
 
 
 def _parse_scalar(raw_value: str) -> str | int | float | None:
@@ -109,10 +130,12 @@ def load_app_config(config_path: Path) -> AppConfig:
     dataset_defaults = DatasetConfig()
     agent_defaults = AgentConfig()
     run_defaults = RunConfig()
+    contract_defaults = AnswerContractConfig()
 
     dataset_payload = payload.get("dataset", {})
     agent_payload = payload.get("agent", {})
     run_payload = payload.get("run", {})
+    contract_payload = payload.get("answer_contract", {})
 
     dataset_config = DatasetConfig(
         root_path=_path_value(dataset_payload.get("root_path"), dataset_defaults.root_path),
@@ -120,9 +143,15 @@ def load_app_config(config_path: Path) -> AppConfig:
     agent_config = AgentConfig(
         model=str(agent_payload.get("model", agent_defaults.model)),
         api_base=str(agent_payload.get("api_base", agent_defaults.api_base)),
-        api_key=str(agent_payload.get("api_key", agent_defaults.api_key)),
+        api_key=_secret_value(agent_payload.get("api_key", agent_defaults.api_key)),
         max_steps=int(agent_payload.get("max_steps", agent_defaults.max_steps)),
         temperature=float(agent_payload.get("temperature", agent_defaults.temperature)),
+        json_mode=bool(agent_payload.get("json_mode", agent_defaults.json_mode)),
+        ace_playbook_path=(
+            _path_value(str(agent_payload["ace_playbook_path"]), PROJECT_ROOT / "artifacts" / "ace_playbook.json")
+            if agent_payload.get("ace_playbook_path")
+            else None
+        ),
     )
     raw_run_id = run_payload.get("run_id")
     run_id = run_defaults.run_id
@@ -136,4 +165,21 @@ def load_app_config(config_path: Path) -> AppConfig:
         max_workers=int(run_payload.get("max_workers", run_defaults.max_workers)),
         task_timeout_seconds=int(run_payload.get("task_timeout_seconds", run_defaults.task_timeout_seconds)),
     )
-    return AppConfig(dataset=dataset_config, agent=agent_config, run=run_config)
+    contract_config = AnswerContractConfig(
+        enabled=bool(contract_payload.get("enabled", contract_defaults.enabled)),
+        model_review_enabled=bool(
+            contract_payload.get(
+                "model_review_enabled",
+                contract_defaults.model_review_enabled,
+            )
+        ),
+        evidence_max_chars=int(
+            contract_payload.get("evidence_max_chars", contract_defaults.evidence_max_chars)
+        ),
+    )
+    return AppConfig(
+        dataset=dataset_config,
+        agent=agent_config,
+        run=run_config,
+        answer_contract=contract_config,
+    )

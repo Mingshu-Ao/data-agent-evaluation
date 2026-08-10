@@ -16,6 +16,7 @@ from data_agent_baseline.agents.agentic_data import (
     AgenticDataLiteAgent,
     AgenticDataLiteConfig,
 )
+from data_agent_baseline.agents.answer_contract import apply_answer_contract
 from data_agent_baseline.agents.dagent import DAgentLiteAgent, DAgentLiteConfig
 from data_agent_baseline.agents.mini_aop import MiniAOPAgent, MiniAOPAgentConfig
 from data_agent_baseline.agents.model import OpenAIModelAdapter
@@ -78,6 +79,7 @@ def build_model_adapter(config: AppConfig):
         api_base=config.agent.api_base,
         api_key=config.agent.api_key,
         temperature=config.agent.temperature,
+        json_mode=config.agent.json_mode,
     )
 
 
@@ -155,14 +157,38 @@ def _run_single_task_core(
                 parallel_prefetch_enabled=parallel_prefetch_enabled,
             ),
         )
-    else:
+    elif agent_kind == "react" or agent_kind == "react_no_convergence" or agent_kind.startswith(
+        "react_enhanced"
+    ):
+        enhanced = agent_kind.startswith("react_enhanced")
         agent = ReActAgent(
             model=effective_model,
             tools=effective_tools,
-            config=ReActAgentConfig(max_steps=config.agent.max_steps),
+            config=ReActAgentConfig(
+                max_steps=config.agent.max_steps,
+                schema_index_enabled=enhanced and not agent_kind.endswith("_no_schema"),
+                convergence_enabled=not agent_kind.endswith("_no_convergence"),
+                ace_enabled=enhanced and not agent_kind.endswith("_no_ace"),
+                ace_playbook_path=(
+                    config.agent.ace_playbook_path
+                    or config.run.output_dir.parent / "ace_playbook.json"
+                    if enhanced
+                    else None
+                ),
+            ),
         )
-    run_result = agent.run(task)
-    return run_result.to_dict()
+    else:
+        raise ValueError(f"Unknown agent kind: {agent_kind}")
+    run_result = agent.run(task).to_dict()
+    if config.answer_contract.enabled:
+        run_result = apply_answer_contract(
+            question=task.question,
+            run_result=run_result,
+            model=effective_model,
+            model_review_enabled=config.answer_contract.model_review_enabled,
+            evidence_max_chars=config.answer_contract.evidence_max_chars,
+        )
+    return run_result
 
 
 def _run_single_task_in_subprocess(task_id: str, config: AppConfig, queue: multiprocessing.Queue[Any]) -> None:
@@ -239,6 +265,9 @@ def _write_task_outputs(task_id: str, run_output_dir: Path, run_result: dict[str
     task_output_dir.mkdir(parents=True, exist_ok=True)
     trace_path = task_output_dir / "trace.json"
     _write_json(trace_path, run_result)
+    contract_report = run_result.get("answer_contract")
+    if isinstance(contract_report, dict):
+        _write_json(task_output_dir / "answer_contract.json", contract_report)
 
     prediction_csv_path: Path | None = None
     analysis_report_path: Path | None = None

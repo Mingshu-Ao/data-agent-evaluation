@@ -7,6 +7,7 @@ from data_agent_baseline.agents.model import ModelMessage
 from data_agent_baseline.agents.prompt import build_observation_prompt
 from data_agent_baseline.agents.react import ReActAgent, ReActAgentConfig
 from data_agent_baseline.benchmark.schema import PublicTask, TaskAssets, TaskRecord
+from data_agent_baseline.tools.filesystem import read_csv_preview
 from data_agent_baseline.tools.registry import create_default_tool_registry
 
 
@@ -20,6 +21,21 @@ def test_observation_prompt_serializes_date_values() -> None:
 
     assert '"report_date": "2026-07-30"' in prompt
     assert '"updated_at": "2026-07-30 12:34:56+00:00"' in prompt
+
+
+def test_read_csv_preview_uses_utf8_on_windows(tmp_path: Path) -> None:
+    context_dir = tmp_path / "context"
+    context_dir.mkdir()
+    (context_dir / "中文.csv").write_text("日期,数值\n2026-08-08,42\n", encoding="utf-8-sig")
+    task = PublicTask(
+        record=TaskRecord(task_id="task_utf8", difficulty="easy", question="Read CSV."),
+        assets=TaskAssets(task_dir=tmp_path, context_dir=context_dir),
+    )
+
+    preview = read_csv_preview(task, "中文.csv")
+
+    assert preview["columns"] == ["日期", "数值"]
+    assert preview["rows"] == [["2026-08-08", "42"]]
 
 
 class BudgetAwareModel:

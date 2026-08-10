@@ -1,0 +1,29 @@
+{
+  "task_id": "task_example",
+  "answer": {
+    "columns": ["record_date", "value"],
+    "rows": [["2026-08-10", "42"]]
+  },
+  "steps": [
+    {
+      "step_index": 1,
+      "thought": "",
+      "action": "answer",
+      "action_input": {
+        "columns": ["record_date", "value"],
+        "rows": [["2026-08-10", "42"]]
+      },
+      "raw_response": "",
+      "observation": {
+        "status": "submitted",
+        "column_count": 2,
+        "row_count": 1
+      },
+      "ok": true
+    }
+  ],
+  "failure_reason": null,
+  "succeeded": true,
+  "e2e_elapsed_seconds": 1.25
+}
+

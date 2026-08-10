@@ -1,30 +1,32 @@
 # Baseline-Pipeline Integration Package
 
-这是提供给 Pipeline 侧的脱敏 Baseline 集成包，包含 ReAct、DAgent-lite、
-AgenticData-lite、Mini-AOP 的统一 CLI、测试、配置模板和 Phase 1 三任务 smoke suite。
+这是 2026-08-10 整理的真实联调包，供 Pipeline 统一调用四种 Data Agent：
 
-## 对接决定 v0
+- ReAct
+- DAgent-lite
+- AgenticData-lite
+- Mini-AOP
 
-1. 第一版通过 `dabench` 命令行调用 Baseline。
-2. 保留原 Benchmark 的 `task_id`，使用 `(benchmark, task_id)` 作为全局标识。
-3. 表格问答默认使用 `gold.csv`；多选题和报告任务允许专用 gold/evaluator。
-4. Pipeline 生成统一任务目录并保存原始媒体；Baseline 负责关键帧、OCR、ASR、VLM 等实验相关预处理。
-5. Pipeline 生成运行 YAML 并设置并发和超时；Baseline 按配置执行。
-6. 重试保留原失败轨迹，不覆盖已有 run。
-7. 完整数据、视频、模型缓存和运行 artifacts 不进入 GitHub。
+仓库包含最新 Baseline 代码、A1 输出契约检查、无密钥配置、Phase 1 三任务
+smoke suite，以及成功/失败输出样例。真实 Benchmark 输入、gold、模型密钥和
+运行产物不在公开仓库中提供。
 
-## 文件
+DAgent-lite、AgenticData-lite 和 Mini-AOP 是论文启发的简化复现，不等同于论文
+官方完整实现。
+
+## 目录
 
 ```text
-pyproject.toml
-src/data_agent_baseline/
-tests/
-configs/baseline_pipeline.example.yaml
-configs/suites/pipeline_smoke_phase1_easy_3.json
-docs/baseline_pipeline_handoff_2026-08-01.md
+src/data_agent_baseline/                 Baseline 实现
+tests/                                   离线单元测试
+configs/baseline_pipeline.example.yaml   无密钥配置模板
+configs/suites/                          固定任务清单
+examples/                                Pipeline 解析样例
+docs/integration_contract.md             输入输出和统计协议
+docs/baseline_pipeline_handoff.md        详细背景说明
 ```
 
-## 安装与测试
+## 安装
 
 ```powershell
 python -m venv .venv
@@ -32,31 +34,55 @@ python -m venv .venv
 .\.venv\Scripts\python.exe -m pytest -q
 ```
 
-视频和 ASR 依赖：
+API Key 通过环境变量提供，不写入配置：
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -e ".[dev,video-asr]"
+$env:DEEPSEEK_API_KEY = "你的API Key"
+Copy-Item configs\baseline_pipeline.example.yaml configs\baseline_pipeline.local.yaml
 ```
 
-## 运行 smoke suite
+## 三任务真实联调
 
-复制并填写本地配置，真实 API Key 只保存在 local 文件中：
+运行前，请在本地准备以下目录；这些数据不要提交到公开仓库：
+
+```text
+data/phase1_smoke/input/task_11
+data/phase1_smoke/input/task_24
+data/phase1_smoke/input/task_67
+data/phase1_smoke/output/task_11/gold.csv
+data/phase1_smoke/output/task_24/gold.csv
+data/phase1_smoke/output/task_67/gold.csv
+```
+
+先运行 ReAct：
 
 ```powershell
-Copy-Item configs\baseline_pipeline.example.yaml configs\baseline_pipeline.local.yaml
-
 .\.venv\Scripts\dabench.exe run-benchmark `
   --config configs\baseline_pipeline.local.yaml `
   --suite configs\suites\pipeline_smoke_phase1_easy_3.json
 ```
 
-Agent 命令映射：
+其他 Agent 仅替换命令：
 
-```text
-react       -> dabench run-benchmark
-dagent      -> dabench run-benchmark-dagent
-agenticdata -> dabench run-benchmark-agenticdata
-mini-aop    -> dabench run-benchmark-mini-aop
-```
+| Agent | 命令 |
+|---|---|
+| ReAct | `run-benchmark` |
+| DAgent-lite | `run-benchmark-dagent` |
+| AgenticData-lite | `run-benchmark-agenticdata` |
+| Mini-AOP | `run-benchmark-mini-aop` |
 
-当前 DAgent-lite、AgenticData-lite、Mini-AOP 属于论文启发的简化复现，不等同于官方完整实现。
+## A0 与 A1
+
+- A0：`answer_contract.enabled: false`，原始 Baseline。
+- A1：`answer_contract.enabled: true`，增加统一输出契约检查和一次模型复核。
+
+A1 是实验变量，不是第五种 Agent。Pipeline 建议增加 `variant` 字段，记录 `A0`
+或 `A1`。启用 A1 后，每个生成答案的任务还会输出 `answer_contract.json`。
+
+## 验收重点
+
+1. 在本地放置 Benchmark 数据后，Pipeline 能读取三个真实任务并调用四种 Agent。
+2. Pipeline 能解析 `summary.json`、`prediction.csv` 和 `trace.json`。
+3. 运行成功率与官方答案准确率分别统计。
+4. 所有实验记录模型、步数上限、超时、配置版本和代码版本。
+5. API Key、服务器账号和本地配置不得进入 GitHub 或运行报告。

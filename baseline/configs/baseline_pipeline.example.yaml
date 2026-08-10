@@ -1,15 +1,22 @@
 dataset:
-  root_path: D:/path/to/pipeline_runs/example/dataset/input
+  root_path: data/phase1_smoke/input
 
 agent:
-  model: YOUR_MODEL_NAME
-  api_base: YOUR_OPENAI_COMPATIBLE_API_BASE
-  api_key: YOUR_LOCAL_API_KEY
+  model: deepseek-v4-flash
+  api_base: https://api.deepseek.com
+  api_key: ${DEEPSEEK_API_KEY}
   max_steps: 16
   temperature: 0.0
+  json_mode: true
+
+answer_contract:
+  enabled: false
+  model_review_enabled: true
+  evidence_max_chars: 24000
 
 run:
-  output_dir: D:/path/to/pipeline_runs/example/baseline_output/react
+  output_dir: artifacts/runs_pipeline_smoke
   run_id:
   max_workers: 1
-  task_timeout_seconds: 600
+  task_timeout_seconds: 1200
+

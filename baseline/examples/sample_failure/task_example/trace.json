@@ -1,0 +1,9 @@
+{
+  "task_id": "task_example",
+  "answer": null,
+  "steps": [],
+  "failure_reason": "Agent did not submit an answer within max_steps.",
+  "succeeded": false,
+  "e2e_elapsed_seconds": 120.0
+}
+
