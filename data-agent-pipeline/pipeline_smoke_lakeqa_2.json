@@ -1,0 +1,24 @@
+{
+  "suite_name": "pipeline_smoke_lakeqa_2",
+  "description": "Two LakeQA tasks (lakeqa-full split) for smoke-testing the LakeQA loader + pipeline integration.",
+  "suite_summary": {
+    "task_count": 2,
+    "benchmark": "lakeqa"
+  },
+  "task_ids": [
+    "lakeqa-full:EQA000001",
+    "lakeqa-full:EQA000002"
+  ],
+  "tasks": [
+    {
+      "task_id": "lakeqa-full:EQA000001",
+      "difficulty": "unknown",
+      "integration_purpose": "LakeQA full task: validate loader + pipeline."
+    },
+    {
+      "task_id": "lakeqa-full:EQA000002",
+      "difficulty": "unknown",
+      "integration_purpose": "LakeQA full task: validate loader + pipeline."
+    }
+  ]
+}

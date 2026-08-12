@@ -1,0 +1,30 @@
+{
+  "suite_name": "pipeline_smoke_fdabench_2",
+  "description": "Two FDAbench tasks (original FDA IDs) to validate the ID-mapping layer end-to-end.",
+  "suite_summary": {
+    "task_count": 2,
+    "benchmark": "fdabench"
+  },
+  "task_ids": [
+    "FDA0033",
+    "FDA0038",
+    "FDA0003"
+  ],
+  "tasks": [
+    {
+      "task_id": "FDA0033",
+      "difficulty": "easy",
+      "integration_purpose": "FDAbench easy task (report answer): validate non-task_<int> ID maps to task_<int> for Baseline staging."
+    },
+    {
+      "task_id": "FDA0038",
+      "difficulty": "easy",
+      "integration_purpose": "FDAbench easy task: second mapped ID in the same run."
+    },
+    {
+      "task_id": "FDA0003",
+      "difficulty": "medium",
+      "integration_purpose": "FDAbench medium task (SQL report answer): third mapped ID."
+    }
+  ]
+}

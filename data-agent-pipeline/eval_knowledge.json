@@ -1,0 +1,20 @@
+{
+    "KDD Cup": {
+        "text": "（KDD Cup 2026 Data Agent 赛道，包含 Phase 1（50 任务）和 Phase 2（60 任务），数据类型覆盖 CSV、JSON、SQLite、Markdown、PDF。评分指标为 Recall、Redundancy Penalty、Final Score。）"
+    },
+    "FDAbench": {
+        "text": "（学术数据 Agent 评测基准，来自 HuggingFace FDAbench2026，评分标准更偏向语义等价。地址：https://huggingface.co/FDAbench2026）"
+    },
+    "Recall": {
+        "text": "（评分指标：预测结果行与标准答案行的匹配比例，0-1 之间，越高越好。计算方式：匹配行数 / 标准答案总行数。）"
+    },
+    "Redundancy Penalty": {
+        "text": "（评分指标：预测行数超出标准答案行数时的惩罚项，0-0.5 之间，越低越好。计算方式：min((预测行数-标准行数)/标准行数*0.5, 0.5)）"
+    },
+    "Final Score": {
+        "text": "（评分指标：max(0, Recall - Redundancy Penalty)，越高越好。综合反映答案正确性与简洁性。）"
+    },
+    "Enhanced ReAct": {
+        "task": "使用 Enhanced ReAct 方案评测任务：先读取数据结构，然后逐步分析，注意不要编造数据。每步执行后检查结果，如 JSON 格式错误则自动重试。"
+    }
+}

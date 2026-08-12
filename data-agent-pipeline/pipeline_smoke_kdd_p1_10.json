@@ -1,0 +1,37 @@
+{
+  "suite_name": "pipeline_smoke_kdd_p1_10",
+  "description": "KDD Phase 1 规模跑：10 tasks (3 easy / 4 medium / 3 hard) across difficulty tiers, for multi-agent comparison.",
+  "selection_policy": "Balanced 10-task subset covering easy/medium/hard, including known-hard task_11 as a stress case.",
+  "suite_summary": {
+    "task_count": 10,
+    "difficulty_counts": {
+      "easy": 3,
+      "medium": 4,
+      "hard": 3
+    }
+  },
+  "task_ids": [
+    "task_11",
+    "task_24",
+    "task_22",
+    "task_145",
+    "task_163",
+    "task_169",
+    "task_173",
+    "task_330",
+    "task_344",
+    "task_349"
+  ],
+  "tasks": [
+    {"task_id": "task_11",  "difficulty": "easy",   "integration_purpose": "Known stress case: JSON cross-file lookup, multi-column output."},
+    {"task_id": "task_24",  "difficulty": "easy",   "integration_purpose": "CSV-JSON count."},
+    {"task_id": "task_22",  "difficulty": "easy",   "integration_purpose": "Easy task, third tier-1 sample."},
+    {"task_id": "task_145", "difficulty": "medium", "integration_purpose": "Medium tier sample 1."},
+    {"task_id": "task_163", "difficulty": "medium", "integration_purpose": "Medium tier sample 2."},
+    {"task_id": "task_169", "difficulty": "medium", "integration_purpose": "Medium tier sample 3."},
+    {"task_id": "task_173", "difficulty": "medium", "integration_purpose": "Medium tier sample 4."},
+    {"task_id": "task_330", "difficulty": "hard",   "integration_purpose": "Hard tier sample 1."},
+    {"task_id": "task_344", "difficulty": "hard",   "integration_purpose": "Hard tier sample 2."},
+    {"task_id": "task_349", "difficulty": "hard",   "integration_purpose": "Hard tier sample 3."}
+  ]
+}

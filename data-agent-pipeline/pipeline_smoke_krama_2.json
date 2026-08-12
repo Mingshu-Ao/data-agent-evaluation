@@ -1,0 +1,24 @@
+{
+  "suite_name": "pipeline_smoke_krama_2",
+  "description": "Two KramaBench tasks (legal domain) for smoke-testing the Krama loader + pipeline integration.",
+  "suite_summary": {
+    "task_count": 2,
+    "benchmark": "krama"
+  },
+  "task_ids": [
+    "legal-hard-1",
+    "legal-easy-10"
+  ],
+  "tasks": [
+    {
+      "task_id": "legal-hard-1",
+      "difficulty": "hard",
+      "integration_purpose": "KramaBench legal hard task: validate loader + pipeline on data-to-insight pipeline tasks."
+    },
+    {
+      "task_id": "legal-easy-10",
+      "difficulty": "easy",
+      "integration_purpose": "KramaBench legal easy task: validate loader + pipeline."
+    }
+  ]
+}
