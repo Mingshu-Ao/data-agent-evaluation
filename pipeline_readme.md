@@ -1,8 +1,8 @@
 # data-agent-pipeline
 
-Data Agent 统一评测 Pipeline（KDD Cup 2026 Data Agent 赛道）。
+Data Agent 统一评测 Pipeline。
 
-本目录是本评测管线的源码，与同仓库的 `baseline/`（4 个 Data Agent 的 Baseline 实现）平级。
+`data-agent-pipeline/` 是本评测管线的源码，与同仓库的 `baseline/`（4 个 Data Agent 的 Baseline 实现）平级。
 管线的职责是：把不同 Benchmark（KDD Cup / FDAbench / KramaBench / LakeQA）的数据统一成
 Baseline 可读的格式，调用 Baseline Agent 评测，收集输出并生成统一评分报告。
 
